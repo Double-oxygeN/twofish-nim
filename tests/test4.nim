@@ -73,7 +73,8 @@ suite "cipher":
       check decryptOFB(cipher, key, iv) == toText(tc)
 
   test "CTR encryption":
+    const nonce: Nonce = [iv[0], iv[1], iv[2]]
     for tc in testcases:
-      let cipher = encryptCTR(tc, key, iv)
+      let cipher = encryptCTR(tc, key, nonce)
       echo cipher.toHex()
-      check decryptCTR(cipher, key, iv) == toText(tc)
+      check decryptCTR(cipher, key, nonce) == toText(tc)

@@ -12,6 +12,7 @@ from strutils import toHex
 
 type
   Text* = distinct seq[Byte]
+  Nonce* = array[0..2, Word]
 
 
 func add(txt: var Text; b: Byte) = seq[Byte](txt).add(b)
@@ -186,9 +187,9 @@ proc decryptOFB*(cipher: Text; key: Key; iv: Block): Text =
 
 # CTR (CounTeR) mode
 
-proc encryptCTR*(txt: Text; key: Key; nonce: Block): Text =
+proc encryptCTR*(txt: Text; key: Key; nonce: Nonce): Text =
   let ptext = addPadding(txt)
-  var ctr = nonce
+  var ctr = [nonce[0], nonce[1], nonce[2], 0'u32]
   for blck in blocks(ptext):
     let
       keyStream = encryptBlock(ctr, key)
@@ -199,8 +200,8 @@ proc encryptCTR*(txt: Text; key: Key; nonce: Block): Text =
 
   setLen(seq[Byte](result), len(txt))
 
-proc encryptCTR*(plaintext: string; key: Key; nonce: Block): Text =
+proc encryptCTR*(plaintext: string; key: Key; nonce: Nonce): Text =
   encryptCTR(toText(plaintext), key, nonce)
 
-proc decryptCTR*(cipher: Text; key: Key; nonce: Block): Text =
+proc decryptCTR*(cipher: Text; key: Key; nonce: Nonce): Text =
   encryptCTR(cipher, key, nonce)
