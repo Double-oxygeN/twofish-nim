@@ -78,3 +78,18 @@ suite "cipher":
       let cipher = encryptCTR(tc, key, nonce)
       echo cipher.toHex()
       check decryptCTR(cipher, key, nonce) == toText(tc)
+
+  test "CCM encryption and verification":
+    const nonce: Nonce = [iv[0], iv[1], iv[2]]
+    for tc in testcases:
+      let cipher = generateEncryptCCM(tc, key, nonce)
+      echo cipher.toHex()
+
+      let dvresult1 = decryptVerifyCCM(cipher, key, nonce)
+      check dvresult1.isValid
+      check dvresult1.plaintext == toText(tc)
+
+      var glitched = cipher
+      (seq[Byte](glitched))[3] = not (seq[Byte](glitched))[3]
+      let dvresult2 = decryptVerifyCCM(glitched, key, nonce)
+      check not dvresult2.isValid

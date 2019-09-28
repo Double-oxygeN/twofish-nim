@@ -13,6 +13,12 @@ from strutils import toHex
 type
   Text* = distinct seq[Byte]
   Nonce* = array[0..2, Word]
+  ResultVerify* = object
+    case isValid*: bool
+    of true:
+      plaintext*: Text
+    of false:
+      nil
 
 
 func add(txt: var Text; b: Byte) = seq[Byte](txt).add(b)
@@ -187,9 +193,9 @@ proc decryptOFB*(cipher: Text; key: Key; iv: Block): Text =
 
 # CTR (CounTeR) mode
 
-proc encryptCTR*(txt: Text; key: Key; nonce: Nonce): Text =
+proc encryptCTR*(txt: Text; key: Key; nonce: Nonce; offset = 0'u32): Text =
   let ptext = addPadding(txt)
-  var ctr = [nonce[0], nonce[1], nonce[2], 0'u32]
+  var ctr = [nonce[0], nonce[1], nonce[2], offset]
   for blck in blocks(ptext):
     let
       keyStream = encryptBlock(ctr, key)
@@ -200,8 +206,79 @@ proc encryptCTR*(txt: Text; key: Key; nonce: Nonce): Text =
 
   setLen(seq[Byte](result), len(txt))
 
-proc encryptCTR*(plaintext: string; key: Key; nonce: Nonce): Text =
-  encryptCTR(toText(plaintext), key, nonce)
+proc encryptCTR*(plaintext: string; key: Key; nonce: Nonce; offset = 0'u32): Text =
+  encryptCTR(toText(plaintext), key, nonce, offset)
 
-proc decryptCTR*(cipher: Text; key: Key; nonce: Nonce): Text =
-  encryptCTR(cipher, key, nonce)
+proc decryptCTR*(cipher: Text; key: Key; nonce: Nonce; offset = 0'u32): Text =
+  encryptCTR(cipher, key, nonce, offset)
+
+# CCM (Conter with CBC-MAC) mode
+
+proc generateEncryptCCM*(txt: Text; key: Key; nonce: Nonce): Text =
+  let
+    txtLen = len(txt)
+    b0 = @[
+      0b00110010'u8,
+      uint8(nonce[0] and 0xff), uint8((nonce[0] shr 8) and 0xff), uint8((nonce[0] shr 16) and 0xff), uint8((nonce[0] shr 24) and 0xff),
+      uint8(nonce[1] and 0xff), uint8((nonce[1] shr 8) and 0xff), uint8((nonce[1] shr 16) and 0xff), uint8((nonce[1] shr 24) and 0xff),
+      uint8(nonce[2] and 0xff), uint8((nonce[2] shr 8) and 0xff), uint8((nonce[2] shr 16) and 0xff), uint8((nonce[2] shr 24) and 0xff),
+      uint8(txtLen and 0xff), uint8((txtLen shr 8) and 0xff), uint8((txtLen shr 16) and 0xff)
+    ]
+    b = Text(b0 & seq[Byte](txt))
+
+    cipher = encryptCTR(txt, key, nonce, 0x1'u32)
+    cipherCBCRaw = seq[Byte](encryptCBC(b, key, [0'u32, 0'u32, 0'u32, 0'u32]))
+    cipherCBCLastBlock = [
+      (uint32(cipherCBCRaw[^16]) or uint32(cipherCBCRaw[^15]) shl 8 or uint32(cipherCBCRaw[^14]) shl 16 or uint32(cipherCBCRaw[^13]) shl 24),
+      (uint32(cipherCBCRaw[^12]) or uint32(cipherCBCRaw[^11]) shl 8 or uint32(cipherCBCRaw[^10]) shl 16 or uint32(cipherCBCRaw[^9]) shl 24),
+      (uint32(cipherCBCRaw[^8]) or uint32(cipherCBCRaw[^7]) shl 8 or uint32(cipherCBCRaw[^6]) shl 16 or uint32(cipherCBCRaw[^5]) shl 24),
+      (uint32(cipherCBCRaw[^4]) or uint32(cipherCBCRaw[^3]) shl 8 or uint32(cipherCBCRaw[^2]) shl 16 or uint32(cipherCBCRaw[^1]) shl 24)
+    ]
+    mac = [nonce[0], nonce[1], nonce[2], 0'u32] xor cipherCBCLastBlock
+
+  result = cipher
+  result.add mac
+
+proc generateEncryptCCM*(plaintext: string; key: Key; nonce: Nonce): Text =
+  generateEncryptCCM(toText(plaintext), key, nonce)
+
+proc decryptVerifyCCM*(cipher: Text; key: Key; nonce: Nonce): ResultVerify =
+  let
+    cipherLen = len(cipher)
+    txtLen = cipherLen - 16
+  if txtLen < 0:
+    return ResultVerify(isValid: false)
+
+  let
+    cipherPart = Text(seq[Byte](cipher)[0..<cipherLen - 16])
+    macPartRaw = seq[Byte](cipher)[cipherLen - 16..cipherLen - 1]
+    plaintext = decryptCTR(cipherPart, key, nonce, 1'u32)
+    mac0 = [
+      (uint32(macPartRaw[0]) or uint32(macPartRaw[1]) shl 8 or uint32(macPartRaw[2]) shl 16 or uint32(macPartRaw[3]) shl 24),
+      (uint32(macPartRaw[4]) or uint32(macPartRaw[5]) shl 8 or uint32(macPartRaw[6]) shl 16 or uint32(macPartRaw[7]) shl 24),
+      (uint32(macPartRaw[8]) or uint32(macPartRaw[9]) shl 8 or uint32(macPartRaw[10]) shl 16 or uint32(macPartRaw[11]) shl 24),
+      (uint32(macPartRaw[12]) or uint32(macPartRaw[13]) shl 8 or uint32(macPartRaw[14]) shl 16 or uint32(macPartRaw[15]) shl 24),
+    ]
+    t = [nonce[0], nonce[1], nonce[2], 0'u32] xor mac0
+
+  let
+    b0 = @[
+      0b00110010'u8,
+      uint8(nonce[0] and 0xff), uint8((nonce[0] shr 8) and 0xff), uint8((nonce[0] shr 16) and 0xff), uint8((nonce[0] shr 24) and 0xff),
+      uint8(nonce[1] and 0xff), uint8((nonce[1] shr 8) and 0xff), uint8((nonce[1] shr 16) and 0xff), uint8((nonce[1] shr 24) and 0xff),
+      uint8(nonce[2] and 0xff), uint8((nonce[2] shr 8) and 0xff), uint8((nonce[2] shr 16) and 0xff), uint8((nonce[2] shr 24) and 0xff),
+      uint8(txtLen and 0xff), uint8((txtLen shr 8) and 0xff), uint8((txtLen shr 16) and 0xff)
+    ]
+    b = Text(b0 & seq[Byte](plaintext))
+    cipherCBCRaw = seq[Byte](encryptCBC(b, key, [0'u32, 0'u32, 0'u32, 0'u32]))
+    cipherCBCLastBlock = [
+      (uint32(cipherCBCRaw[^16]) or uint32(cipherCBCRaw[^15]) shl 8 or uint32(cipherCBCRaw[^14]) shl 16 or uint32(cipherCBCRaw[^13]) shl 24),
+      (uint32(cipherCBCRaw[^12]) or uint32(cipherCBCRaw[^11]) shl 8 or uint32(cipherCBCRaw[^10]) shl 16 or uint32(cipherCBCRaw[^9]) shl 24),
+      (uint32(cipherCBCRaw[^8]) or uint32(cipherCBCRaw[^7]) shl 8 or uint32(cipherCBCRaw[^6]) shl 16 or uint32(cipherCBCRaw[^5]) shl 24),
+      (uint32(cipherCBCRaw[^4]) or uint32(cipherCBCRaw[^3]) shl 8 or uint32(cipherCBCRaw[^2]) shl 16 or uint32(cipherCBCRaw[^1]) shl 24)
+    ]
+
+  if t != cipherCBCLastBlock:
+    return ResultVerify(isValid: false)
+
+  result = ResultVerify(isValid: true, plaintext: plaintext)
