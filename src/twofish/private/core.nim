@@ -14,9 +14,9 @@ const
 type
   Nibble = distinct range[0x0'u8..0xf'u8]
   Byte = byte
-  Word = uint32
-  Text = array[0..3, Word]
-  Key = array[0..2 * k - 1, Word]
+  Word* = uint32
+  Block* = array[0..3, Word]
+  Key* = array[0..2 * k - 1, Word]
   ExKey = Word
   SBox = Word
   RoundCount = range[0..15]
@@ -230,9 +230,9 @@ const
   rho: Word = 0x01_01_01_01'u32
 
 
-func whitening(txt: Text; keys: array[0..3, ExKey]): Text =
+func whitening(blck: Block; keys: array[0..3, ExKey]): Block =
   for i in 0..3:
-    result[i] = txt[i] xor keys[i]
+    result[i] = blck[i] xor keys[i]
 
 
 func divideKey(key: Key): tuple[keyEven, keyOdd: array[0..k - 1, Word]] =
@@ -277,14 +277,14 @@ func makeSBoxes(key: Key): array[0..k - 1, SBox] =
 
 # encrypt / decrypt
 
-func encryptText*(txt: Text; key: Key): Text =
-  ## Encrypt the plain text block (``txt``).
+func encryptBlock*(blck: Block; key: Key): Block =
+  ## Encrypt the plain text blck (``blck``).
   let
     exKeys = makeExKeys(key)
     sBoxes = makeSBoxes(key)
 
   # input whitening
-  result = whitening(txt, [exKeys[0], exKeys[1], exKeys[2], exKeys[3]])
+  result = whitening(blck, [exKeys[0], exKeys[1], exKeys[2], exKeys[3]])
 
   # round 1 to 16
   for round in 0..15:
@@ -305,14 +305,14 @@ func encryptText*(txt: Text; key: Key): Text =
   result = whitening(result, [exKeys[4], exKeys[5], exKeys[6], exKeys[7]])
 
 
-func decryptText*(txt: Text; key: Key): Text =
-  ## Decrypt the cipher text block (``txt``).
+func decryptBlock*(blck: Block; key: Key): Block =
+  ## Decrypt the cipher text blck (``blck``).
   let
     exKeys = makeExKeys(key)
     sBoxes = makeSBoxes(key)
 
   # undo output whitening
-  result = whitening(txt, [exKeys[4], exKeys[5], exKeys[6], exKeys[7]])
+  result = whitening(blck, [exKeys[4], exKeys[5], exKeys[6], exKeys[7]])
 
   # swap
   block:

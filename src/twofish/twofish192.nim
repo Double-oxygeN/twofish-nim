@@ -5,6 +5,4 @@
 
 const keySize = 192
 
-include private/core
-
-export encryptText, decryptText
+include private/core, private/modes

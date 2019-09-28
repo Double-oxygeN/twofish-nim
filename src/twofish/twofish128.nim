@@ -5,4 +5,4 @@
 
 const keySize = 128
 
-include private/core
+include private/core, private/modes
