@@ -3,6 +3,9 @@
 # This software is released under the MIT License.
 # https://opensource.org/licenses/MIT
 
+when defined(macosx):
+  {.emit: "/*INCLUDESECTION*/\p#include <sys/stat.h>".}
+
 import bitops, macros
 from strutils import fromHex, HexDigits
 
