@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.2"
+version       = "0.1.3"
 author        = "Double-oxygeN"
 description   = "Twofish, a 128-bit block cipher"
 license       = "MIT"
